@@ -9,15 +9,15 @@ The repository contains two things:
 - **[nxt_dep_awtrix/](nxt_dep_awtrix/)** — a Home Assistant add-on that polls PRIM on an interval and publishes the next departure for each configured stop to an [AWTRIX](https://blueforcer.github.io/awtrix3/)/Ulanzi TC001 pixel display over MQTT, as a rotating custom app per stop.
 - **[scripts/check_departures.py](scripts/check_departures.py)** — a standalone debug/reference script that queries the same stops and logs the departures to the console. No MQTT or Home Assistant required; useful for quickly checking the PRIM API or a stop/line reference without deploying the add-on.
 
-The two share the PRIM API client code in [nxt_dep_awtrix/prim_client.py](nxt_dep_awtrix/prim_client.py) (the list of monitored lines/stops, the HTTP call, and the departure-time math).
+The two share the PRIM API client code in [nxt_dep_awtrix/prim_client.py](nxt_dep_awtrix/prim_client.py) (loading/validating the monitored lines/stops, the HTTP call, and the departure-time math).
 
 ## Technical requirements
 
-- Python 3.12
+- Python 3.14
 - A PRIM API token (free, from the [PRIM developer portal](https://prim.iledefrance-mobilites.fr/)), exposed as `PRIM_API_TOKEN`
-- Dependencies from [nxt_dep_awtrix/requirements.txt](nxt_dep_awtrix/requirements.txt): `requests`, `paho-mqtt`
+- Dependencies from [nxt_dep_awtrix/requirements.txt](nxt_dep_awtrix/requirements.txt): `requests`, `paho-mqtt`, `PyYAML`
 - To run the add-on itself: a Home Assistant instance (or plain Docker) and an MQTT broker (e.g. Mosquitto) reachable from it, plus an AWTRIX/Ulanzi display subscribed to that broker
-- The monitored lines/stops are hardcoded in `prim_client.py` (`TRANSPORTATIONS`) — editing them requires changing that file, there's no runtime configuration for it
+- The monitored lines/stops are configured via the add-on's `lines` option, falling back to the bundled [nxt_dep_awtrix/lines.yaml](nxt_dep_awtrix/lines.yaml) when left empty — see [nxt_dep_awtrix/README.md](nxt_dep_awtrix/README.md) for details
 
 ## How to use
 
