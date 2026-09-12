@@ -1,0 +1,139 @@
+import json
+import math
+import logging
+import logging.config
+import os
+import time
+
+import paho.mqtt.client as mqtt
+
+from prim_client import TRANSPORTATIONS, get_next_departure, time_remaining_until_next_departure
+
+try:
+    logging.config.fileConfig('logging.conf')
+except FileNotFoundError:
+    logging.basicConfig(level=logging.INFO)
+    logging.warning("logging.conf not found next to this script, falling back to basicConfig")
+
+logger = logging.getLogger('nxt_dep_ratp')
+
+
+def load_config():
+    """Home Assistant add-ons write the options the user filled in the UI to
+    /data/options.json inside the container. Fall back to plain environment
+    variables so the script can still be run/tested outside of an add-on."""
+    options = {}
+    options_path = "/data/options.json"
+    if os.path.exists(options_path):
+        with open(options_path) as f:
+            options = json.load(f)
+
+    def get(key, env_key, default=None, required=False):
+        value = options.get(key, os.environ.get(env_key, default))
+        if required and not value:
+            raise RuntimeError(f"Missing required config value '{key}' (set it in the add-on Configuration tab)")
+        return value
+
+    return {
+        "PRIM_API_TOKEN": get("prim_api_token", "PRIM_API_TOKEN", required=True),
+        "MQTT_HOST": get("mqtt_host", "MQTT_HOST", default="core-mosquitto"),
+        "MQTT_PORT": int(get("mqtt_port", "MQTT_PORT", default=1883)),
+        "MQTT_USER": get("mqtt_user", "MQTT_USER", default=None),
+        "MQTT_PASSWORD": get("mqtt_password", "MQTT_PASSWORD", default=None),
+        "AWTRIX_PREFIX": get("awtrix_prefix", "AWTRIX_PREFIX", required=True),
+        "POLL_INTERVAL_SECONDS": int(get("poll_interval_seconds", "POLL_INTERVAL_SECONDS", default=30)),
+    }
+
+
+CONFIG = load_config()
+PRIM_API_TOKEN = CONFIG["PRIM_API_TOKEN"]
+
+
+def make_awtrix_appname(line_name, stop_index):
+    # AWTRIX app names must not contain spaces; keep them short and stable
+    # so each stop always refreshes the same rotating app instead of piling
+    # up new ones.
+    safe_line = "".join(ch for ch in line_name if ch.isalnum()) or "line"
+    return f"bus{safe_line}_{stop_index}"
+
+
+def publish_departure(mqtt_client, prefix, appname, line_name, destination_name, wait_time, color):
+    if wait_time <= 0:
+        text = f"{line_name} > {destination_name}: due"
+    else:
+        text = f"{line_name} > {destination_name}: {wait_time}min"
+
+    payload = {
+        "text": text,
+        "icon": "",
+        "color": color,
+        "duration": 6,
+        # If we stop publishing (script crash, network outage) for longer
+        # than this, AWTRIX removes the app instead of showing a stale time.
+        "lifetime": 90,
+        "lifetimeMode": 0,
+    }
+    topic = f"{prefix}/custom/{appname}"
+    mqtt_client.publish(topic, json.dumps(payload), retain=False)
+    logger.debug(f"published to {topic}: {payload}")
+
+
+def clear_app(mqtt_client, prefix, appname):
+    # Publishing an empty payload removes a custom app immediately.
+    mqtt_client.publish(f"{prefix}/custom/{appname}", "", retain=False)
+
+
+def build_mqtt_client(config):
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv311)
+    if config["MQTT_USER"]:
+        client.username_pw_set(config["MQTT_USER"], config["MQTT_PASSWORD"])
+    client.reconnect_delay_set(min_delay=1, max_delay=30)
+
+    while True:
+        try:
+            client.connect(config["MQTT_HOST"], config["MQTT_PORT"], keepalive=60)
+            break
+        except (OSError, ConnectionRefusedError) as exc:
+            logger.error(f"could not connect to MQTT broker {config['MQTT_HOST']}:{config['MQTT_PORT']} ({exc}), retrying in 10s")
+            time.sleep(10)
+
+    client.loop_start()
+    return client
+
+
+def run_once(mqtt_client):
+    for transportation in TRANSPORTATIONS:
+        line_name = transportation["line_name"]
+        color = f"#{transportation.get('ColourWeb_hexa', 'ffffff')}"
+        for stop_index, stop in enumerate(transportation["stops"]):
+            stop_name = stop["stop_name"]
+            destination_name = stop["destination_name"]
+            appname = make_awtrix_appname(line_name, stop_index)
+
+            departure_json = get_next_departure(PRIM_API_TOKEN, transportation["line_ref"], stop["stop_ref"])
+            if departure_json is None:
+                logger.warning(f"Could not get departures for line {line_name} in stop {stop_name} in direction of {destination_name}")
+                continue
+
+            if departure_json["Notice"] != "":
+                logger.info(f"No departures for line {line_name} in stop {stop_name} in direction of {destination_name}: {departure_json['Notice']}")
+                clear_app(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname)
+                continue
+
+            next_departure = departure_json["next_departures"][0]
+            seconds_remaining = time_remaining_until_next_departure(next_departure["ExpectedDepartureTime"]).total_seconds()
+            wait_time = max(0, math.floor(seconds_remaining / 60))
+            logger.info(f"{line_name} to {destination_name} from {stop_name}: {wait_time} min")
+            publish_departure(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname, line_name, destination_name, wait_time, color)
+
+
+if __name__ == '__main__':
+    logger.info(f"Starting nxt_dep_awtrix, publishing to prefix '{CONFIG['AWTRIX_PREFIX']}' every {CONFIG['POLL_INTERVAL_SECONDS']}s")
+    mqtt_client = build_mqtt_client(CONFIG)
+    try:
+        while True:
+            run_once(mqtt_client)
+            time.sleep(CONFIG["POLL_INTERVAL_SECONDS"])
+    finally:
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
