@@ -82,22 +82,21 @@ def publish_departure(mqtt_client, prefix, appname, line_name, destination_name,
 
     payload = {
         "text": text,
-        "icon": "",
-        "color": color,
-        "duration": 6,
+        "textColor": color,
+        "durationMs": 6000,
         # If we stop publishing (script crash, network outage) for longer
         # than this, AWTRIX removes the app instead of showing a stale time.
-        "lifetime": 90,
-        "lifetimeMode": 0,
+        "lifetimeMs": 90000,
+        "lifetimeExpiry": "remove",
     }
-    topic = f"{prefix}/custom/{appname}"
+    topic = f"{prefix}/cmd/apps/pushed/{appname}"
     mqtt_client.publish(topic, json.dumps(payload), retain=False)
     logger.debug(f"published to {topic}: {payload}")
 
 
 def clear_app(mqtt_client, prefix, appname):
-    # Publishing an empty payload removes a custom app immediately.
-    mqtt_client.publish(f"{prefix}/custom/{appname}", "", retain=False)
+    # Publishing an empty payload removes a pushed app immediately.
+    mqtt_client.publish(f"{prefix}/cmd/apps/pushed/{appname}", "", retain=False)
 
 
 def build_mqtt_client(config):
