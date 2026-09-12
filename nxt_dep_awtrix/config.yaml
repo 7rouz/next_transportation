@@ -19,6 +19,7 @@ options:
   mqtt_password: ""
   awtrix_prefix: "ulanzi_xxxxxx"
   poll_interval_seconds: 30
+  lines: []
 schema:
   prim_api_token: str
   mqtt_host: str
@@ -27,3 +28,11 @@ schema:
   mqtt_password: password
   awtrix_prefix: str
   poll_interval_seconds: int
+  lines:
+    - line_name: str
+      line_ref: str
+      color: str?
+      stops:
+        - stop_ref: str
+          stop_name: str
+          destination_name: str
