@@ -7,7 +7,7 @@ import time
 
 import paho.mqtt.client as mqtt
 
-from prim_client import TRANSPORTATIONS, get_next_departure, time_remaining_until_next_departure
+from prim_client import load_transportations, get_next_departure, time_remaining_until_next_departure
 
 try:
     logging.config.fileConfig('logging.conf')
@@ -34,6 +34,21 @@ def load_config():
             raise RuntimeError(f"Missing required config value '{key}' (set it in the add-on Configuration tab)")
         return value
 
+    def get_lines():
+        """The 'lines' option is a list of objects, not a scalar, so it can't
+        go through get() above: options.json already parses it as a list,
+        while the env var fallback (for running outside the add-on) is a
+        JSON-encoded string that needs decoding."""
+        if options.get("lines"):
+            return options["lines"]
+        env_value = os.environ.get("LINES")
+        if env_value:
+            try:
+                return json.loads(env_value)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"LINES environment variable is not valid JSON: {exc}") from exc
+        return None
+
     return {
         "PRIM_API_TOKEN": get("prim_api_token", "PRIM_API_TOKEN", required=True),
         "MQTT_HOST": get("mqtt_host", "MQTT_HOST", default="core-mosquitto"),
@@ -42,11 +57,13 @@ def load_config():
         "MQTT_PASSWORD": get("mqtt_password", "MQTT_PASSWORD", default=None),
         "AWTRIX_PREFIX": get("awtrix_prefix", "AWTRIX_PREFIX", required=True),
         "POLL_INTERVAL_SECONDS": int(get("poll_interval_seconds", "POLL_INTERVAL_SECONDS", default=30)),
+        "LINES": get_lines(),
     }
 
 
 CONFIG = load_config()
 PRIM_API_TOKEN = CONFIG["PRIM_API_TOKEN"]
+TRANSPORTATIONS = load_transportations(CONFIG["LINES"])
 
 
 def make_awtrix_appname(line_name, stop_index):
@@ -104,7 +121,7 @@ def build_mqtt_client(config):
 def run_once(mqtt_client):
     for transportation in TRANSPORTATIONS:
         line_name = transportation["line_name"]
-        color = f"#{transportation.get('ColourWeb_hexa', 'ffffff')}"
+        color = f"#{transportation.get('color', 'ffffff')}"
         for stop_index, stop in enumerate(transportation["stops"]):
             stop_name = stop["stop_name"]
             destination_name = stop["destination_name"]

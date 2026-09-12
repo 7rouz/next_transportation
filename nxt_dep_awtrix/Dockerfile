@@ -8,5 +8,6 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY prim_client.py /app/prim_client.py
 COPY nxt_dep_awtrix.py /app/nxt_dep_awtrix.py
 COPY logging.conf /app/logging.conf
+COPY lines.yaml /app/lines.yaml
 
 CMD ["python3", "/app/nxt_dep_awtrix.py"]

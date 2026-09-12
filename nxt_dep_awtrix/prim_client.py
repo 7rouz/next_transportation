@@ -1,13 +1,57 @@
 import datetime
 import logging
+import os
 
 import requests
+import yaml
 
 logger = logging.getLogger('nxt_dep_ratp')
 
-TRANSPORTATIONS = [ {"line_name": "25","line_ref":"STIF:Line::C02243:", "stops":[{"stop_ref":"STIF:StopPoint:Q:25376:","stop_name":"Jules Vanzuppe","destination_name":"Bibliotheque F.mitterrand"},{"stop_ref":"STIF:StopPoint:Q:23402:","stop_name":"Jules Vanzuppe","destination_name":"V.couturier Lenine"}],"ColourWeb_hexa": "ff1400"},
-                    {"line_name": "325","line_ref":"STIF:Line::C01288:", "stops":[{"stop_ref":"STIF:StopPoint:Q:463689:","stop_name":"Jules Vanzuppe","destination_name":"Quai de la Gare"},{"stop_ref":"STIF:StopPoint:Q:463557:","stop_name":"Jules Vanzuppe","destination_name":"Chateau de Vincennes"}],"ColourWeb_hexa": "82c8e6"},
-                    {"line_name": "125","line_ref":"STIF:Line::C01154:", "stops":[{"stop_ref":"STIF:StopPoint:Q:15122:","stop_name":"Ivry-sur-Seine RER","destination_name":"Ecole Veterinaire"},{"stop_ref":"STIF:StopPoint:Q:16918:","stop_name":"Ivry-sur-Seine RER","destination_name":"Porte d'Orleans"},{"stop_ref":"STIF:StopPoint:Q:39569:","stop_name":"Jean-Jacques Rousseau","destination_name":"Porte d'Orleans"}],"ColourWeb_hexa": "0055c8"}]
+DEFAULT_LINES_PATH = os.path.join(os.path.dirname(__file__), "lines.yaml")
+
+
+class TransportationConfigError(ValueError):
+    """Raised when a 'lines' configuration (from the add-on option or the
+    bundled default file) doesn't have the shape get_next_departure() and
+    run_once() expect, so the problem is clear immediately instead of surfacing
+    as a KeyError deep inside the polling loop."""
+
+
+def _require_fields(item, fields, source, what):
+    missing = [field for field in fields if field not in item]
+    if missing:
+        raise TransportationConfigError(f"{source}: {what} is missing required field(s) {missing}: {item}")
+
+
+def _validate_transportations(lines, source):
+    if not isinstance(lines, list) or not lines:
+        raise TransportationConfigError(f"{source} must contain a non-empty list of lines")
+
+    for i, line in enumerate(lines):
+        _require_fields(line, ("line_name", "line_ref", "stops"), source, f"line #{i + 1}")
+        if not isinstance(line["stops"], list) or not line["stops"]:
+            raise TransportationConfigError(f"{source}: line '{line['line_name']}' must have a non-empty list of stops")
+        for j, stop in enumerate(line["stops"]):
+            _require_fields(stop, ("stop_ref", "stop_name", "destination_name"), source,
+                             f"line '{line['line_name']}', stop #{j + 1}")
+
+    return lines
+
+
+def load_transportations(configured_lines=None):
+    """Returns configured_lines if given (the add-on's 'lines' option),
+    otherwise falls back to the bundled lines.yaml (also always used by
+    scripts/check_departures.py, which has no add-on options of its own)."""
+    if configured_lines:
+        return _validate_transportations(configured_lines, "configured 'lines' option")
+
+    with open(DEFAULT_LINES_PATH) as f:
+        data = yaml.safe_load(f)
+
+    if not isinstance(data, dict) or "lines" not in data:
+        raise TransportationConfigError(f"{DEFAULT_LINES_PATH} must contain a top-level 'lines' key")
+
+    return _validate_transportations(data["lines"], DEFAULT_LINES_PATH)
 
 
 def time_remaining_until_next_departure(next_departure):

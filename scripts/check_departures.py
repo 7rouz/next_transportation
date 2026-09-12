@@ -9,7 +9,7 @@ import sys
 # image from there); add that directory to the path so this standalone script
 # can reuse it instead of keeping its own copy.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "nxt_dep_awtrix"))
-from prim_client import TRANSPORTATIONS, get_next_departure, time_remaining_until_next_departure  # noqa: E402
+from prim_client import load_transportations, get_next_departure, time_remaining_until_next_departure  # noqa: E402
 
 try:
     logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "..", "nxt_dep_awtrix", "logging.conf"))
@@ -24,6 +24,8 @@ PRIM_API_TOKEN = os.environ.get("PRIM_API_TOKEN")
 if not PRIM_API_TOKEN:
     logger.error("PRIM_API_TOKEN is not set in the environment - the API calls will fail")
     raise RuntimeError("PRIM_API_TOKEN environment variable is not set")
+
+TRANSPORTATIONS = load_transportations()
 
 
 if __name__ == '__main__':

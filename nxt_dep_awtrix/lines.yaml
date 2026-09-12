@@ -1,0 +1,38 @@
+# Default set of monitored lines/stops, used when the add-on's "lines" option
+# is left empty (its default) and always used by scripts/check_departures.py.
+# Each stop_ref/line_ref is a PRIM (IDFM) SIRI identifier - look them up via
+# the PRIM stop-monitoring API or IDFM's open data stop reference.
+lines:
+  - line_name: "25"
+    line_ref: "STIF:Line::C02243:"
+    color: "ff1400"
+    stops:
+      - stop_ref: "STIF:StopPoint:Q:25376:"
+        stop_name: "Jules Vanzuppe"
+        destination_name: "Bibliotheque F.mitterrand"
+      - stop_ref: "STIF:StopPoint:Q:23402:"
+        stop_name: "Jules Vanzuppe"
+        destination_name: "V.couturier Lenine"
+  - line_name: "325"
+    line_ref: "STIF:Line::C01288:"
+    color: "82c8e6"
+    stops:
+      - stop_ref: "STIF:StopPoint:Q:463689:"
+        stop_name: "Jules Vanzuppe"
+        destination_name: "Quai de la Gare"
+      - stop_ref: "STIF:StopPoint:Q:463557:"
+        stop_name: "Jules Vanzuppe"
+        destination_name: "Chateau de Vincennes"
+  - line_name: "125"
+    line_ref: "STIF:Line::C01154:"
+    color: "0055c8"
+    stops:
+      - stop_ref: "STIF:StopPoint:Q:15122:"
+        stop_name: "Ivry-sur-Seine RER"
+        destination_name: "Ecole Veterinaire"
+      - stop_ref: "STIF:StopPoint:Q:16918:"
+        stop_name: "Ivry-sur-Seine RER"
+        destination_name: "Porte d'Orleans"
+      - stop_ref: "STIF:StopPoint:Q:39569:"
+        stop_name: "Jean-Jacques Rousseau"
+        destination_name: "Porte d'Orleans"
