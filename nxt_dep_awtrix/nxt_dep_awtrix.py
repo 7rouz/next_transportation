@@ -83,7 +83,7 @@ def publish_departure(mqtt_client, prefix, appname, line_name, destination_name,
     payload = {
         "text": text,
         "textColor": color,
-        "durationMs": 6000,
+        "durationMs": 8000,
         # If we stop publishing (script crash, network outage) for longer
         # than this, AWTRIX removes the app instead of showing a stale time.
         "lifetimeMs": 90000,
