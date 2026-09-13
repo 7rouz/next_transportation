@@ -74,7 +74,7 @@ def make_awtrix_appname(line_name, stop_index):
     return f"bus{safe_line}_{stop_index}"
 
 
-def publish_departure(mqtt_client, prefix, appname, line_name, message, color):
+def publish_departure(mqtt_client, prefix, appname, message, color):
 
     payload = {
         "text": message,
@@ -130,7 +130,7 @@ def run_once(mqtt_client):
 
             if departure_json["Notice"] != "":
                 logger.info(f"No departures for line {line_name} in stop {stop_name} in direction of {destination_name}: {departure_json['Notice']}")
-                text = f"{line_name}: {destination_name}: {departure_json["Notice"]}"
+                text = f"{line_name}: {destination_name_short}: {departure_json["Notice"]}"
                 # clear_app(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname)
                 publish_departure(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname, text, color)
                 continue
@@ -144,9 +144,9 @@ def run_once(mqtt_client):
                 seconds_remaining_2 = time_remaining_until_next_departure(next_departure_2["ExpectedDepartureTime"]).total_seconds()
                 wait_time_2 = max(0, math.floor(seconds_remaining_2 / 60))
             else:
-                wait_time_2 = "..."
+                wait_time_2 = "-"
             logger.info(f"{line_name} to {destination_name} from {stop_name}: {wait_time} min")
-            text = f"{line_name}: {destination_name}: {wait_time} / {wait_time_2}"
+            text = f"{line_name}: {destination_name_short}: {wait_time} > {wait_time_2}"
             publish_departure(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname, text, color)
 
 
