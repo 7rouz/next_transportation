@@ -36,3 +36,4 @@ schema:
         - stop_ref: str
           stop_name: str
           destination_name: str
+          destination_name_short: str?

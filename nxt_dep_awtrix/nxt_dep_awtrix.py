@@ -74,11 +74,11 @@ def make_awtrix_appname(line_name, stop_index):
     return f"bus{safe_line}_{stop_index}"
 
 
-def publish_departure(mqtt_client, prefix, appname, line_name, destination_name, wait_time, color):
+def publish_departure(mqtt_client, prefix, appname, line_name, destination_name, wait_time, wait_time_2, color):
     if wait_time <= 0:
-        text = f"{line_name} > {destination_name}: due"
+        text = f"[{line_name}] {destination_name}: due"
     else:
-        text = f"{line_name} > {destination_name}: {wait_time}min"
+        text = f"[{line_name}] {destination_name}: {wait_time} / {wait_time_2}"
 
     payload = {
         "text": text,
@@ -124,6 +124,7 @@ def run_once(mqtt_client):
         for stop_index, stop in enumerate(transportation["stops"]):
             stop_name = stop["stop_name"]
             destination_name = stop["destination_name"]
+            destination_name_short = stop.get("destination_name_short", destination_name)
             appname = make_awtrix_appname(line_name, stop_index)
 
             departure_json = get_next_departure(PRIM_API_TOKEN, transportation["line_ref"], stop["stop_ref"])
@@ -136,11 +137,18 @@ def run_once(mqtt_client):
                 clear_app(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname)
                 continue
 
-            next_departure = departure_json["next_departures"][0]
+            next_departures = departure_json["next_departures"]
+            next_departure = next_departures[0]
             seconds_remaining = time_remaining_until_next_departure(next_departure["ExpectedDepartureTime"]).total_seconds()
             wait_time = max(0, math.floor(seconds_remaining / 60))
+            if len(next_departures) > 1:
+                next_departure_2 = next_departures[1]
+                seconds_remaining_2 = time_remaining_until_next_departure(next_departure_2["ExpectedDepartureTime"]).total_seconds()
+                wait_time_2 = max(0, math.floor(seconds_remaining_2 / 60))
+            else:
+                wait_time_2 = "..."
             logger.info(f"{line_name} to {destination_name} from {stop_name}: {wait_time} min")
-            publish_departure(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname, line_name, destination_name, wait_time, color)
+            publish_departure(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname, line_name, destination_name_short, wait_time, wait_time_2, color)
 
 
 if __name__ == '__main__':
@@ -149,6 +157,7 @@ if __name__ == '__main__':
     try:
         while True:
             run_once(mqtt_client)
+            # Cool down period
             time.sleep(CONFIG["POLL_INTERVAL_SECONDS"])
     finally:
         mqtt_client.loop_stop()
