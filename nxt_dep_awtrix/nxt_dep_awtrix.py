@@ -5,10 +5,18 @@ import logging
 import logging.config
 import os
 import time
+from zoneinfo import ZoneInfo
 
 import paho.mqtt.client as mqtt
 
 from prim_client import load_transportations, get_next_departure, time_remaining_until_next_departure
+
+# The active-hours window below is meant in Paris local time regardless of the
+# host/container's own timezone configuration (that's what broke last time:
+# the Alpine-based image has no system tzdata, so the container silently ran
+# on UTC). The `tzdata` package (see requirements.txt) provides the IANA
+# database so this resolves correctly even without OS-level tzdata.
+LOCAL_TIMEZONE = ZoneInfo("Europe/Paris")
 
 try:
     logging.config.fileConfig('logging.conf')
@@ -199,7 +207,7 @@ if __name__ == '__main__':
     mqtt_client = build_mqtt_client(CONFIG)
     try:
         while True:
-            now = datetime.datetime.now()
+            now = datetime.datetime.now(LOCAL_TIMEZONE)
             wait_seconds = seconds_until_active_window(now)
             if wait_seconds == 0:
                 run_once(mqtt_client)
