@@ -1,3 +1,4 @@
+import datetime
 import json
 import math
 import logging
@@ -74,11 +75,22 @@ def make_awtrix_appname(line_name, stop_index):
     return f"bus{safe_line}_{stop_index}"
 
 
-def publish_departure(mqtt_client, prefix, appname, message, color):
+WHITE = "#ffffff"
+SOFT_GREEN = "#2ecc71"
+SOFT_RED = "#e74c3c"
+SEPARATOR_COLOR = "#9b59b6"
+NOTICE_ORANGE = "#e67e22"
 
+
+def wait_time_color(wait_time):
+    if not isinstance(wait_time, int):
+        return WHITE
+    return SOFT_GREEN if wait_time >= 5 else SOFT_RED
+
+
+def publish_departure(mqtt_client, prefix, appname, text):
     payload = {
-        "text": message,
-        "textColor": color,
+        "text": text,
         "durationMs": 8000,
         # If we stop publishing (script crash, network outage) for longer
         # than this, AWTRIX removes the app instead of showing a stale time.
@@ -130,9 +142,12 @@ def run_once(mqtt_client):
 
             if departure_json["Notice"] != "":
                 logger.info(f"No departures for line {line_name} in stop {stop_name} in direction of {destination_name}: {departure_json['Notice']}")
-                text = f"{line_name}: {destination_name_short}: {departure_json["Notice"]}"
+                text = [
+                    {"text": f"{line_name}: ", "color": color},
+                    {"text": f"{destination_name_short}: {departure_json['Notice']}", "color": NOTICE_ORANGE},
+                ]
                 # clear_app(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname)
-                publish_departure(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname, text, color)
+                publish_departure(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname, text)
                 continue
 
             next_departures = departure_json["next_departures"]
@@ -146,8 +161,37 @@ def run_once(mqtt_client):
             else:
                 wait_time_2 = "-"
             logger.info(f"{line_name} to {destination_name} from {stop_name}: {wait_time} min")
-            text = f"{line_name}: {destination_name_short}: {wait_time} > {wait_time_2}"
-            publish_departure(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname, text, color)
+            text = [
+                {"text": f"{line_name}: ", "color": color},
+                {"text": f"{destination_name_short}: ", "color": WHITE},
+                {"text": str(wait_time), "color": wait_time_color(wait_time)},
+                {"text": " > ", "color": SEPARATOR_COLOR},
+                {"text": str(wait_time_2), "color": wait_time_color(wait_time_2)},
+            ]
+            publish_departure(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname, text)
+
+
+ACTIVE_WINDOW_START_MINUTES = 7 * 60
+ACTIVE_WINDOW_END_MINUTES = 8 * 60 + 30
+
+
+def seconds_until_active_window(now):
+    """0 if `now` falls in the Mon-Fri 07:00-08:30 commute window this add-on
+    only polls during; otherwise seconds to sleep until that window next
+    opens. Covers every case (early morning, past today's window, weekends)
+    so the caller always has a positive duration to sleep for instead of
+    spinning the loop with no delay when a case is missed."""
+    minutes_since_midnight = now.hour * 60 + now.minute
+    if now.isoweekday() <= 5 and ACTIVE_WINDOW_START_MINUTES <= minutes_since_midnight < ACTIVE_WINDOW_END_MINUTES:
+        return 0
+
+    target = now.replace(hour=7, minute=0, second=0, microsecond=0)
+    if minutes_since_midnight >= ACTIVE_WINDOW_END_MINUTES:
+        target += datetime.timedelta(days=1)
+    while target.isoweekday() > 5:
+        target += datetime.timedelta(days=1)
+
+    return max(1, (target - now).total_seconds())
 
 
 if __name__ == '__main__':
@@ -155,9 +199,14 @@ if __name__ == '__main__':
     mqtt_client = build_mqtt_client(CONFIG)
     try:
         while True:
-            run_once(mqtt_client)
-            # Cool down period
-            time.sleep(CONFIG["POLL_INTERVAL_SECONDS"])
+            now = datetime.datetime.now()
+            wait_seconds = seconds_until_active_window(now)
+            if wait_seconds == 0:
+                run_once(mqtt_client)
+                time.sleep(CONFIG["POLL_INTERVAL_SECONDS"])
+            else:
+                logger.info(f"{now} is outside the Mon-Fri 07:00-08:30 window, sleeping {wait_seconds:.0f}s")
+                time.sleep(wait_seconds)
     finally:
         mqtt_client.loop_stop()
         mqtt_client.disconnect()
