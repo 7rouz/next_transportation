@@ -4,7 +4,7 @@
 
 This is a Home Assistant add-on that fetches upcoming RATP/IDFM (Île-de-France Mobilités, via the [PRIM](https://prim.iledefrance-mobilites.fr/) API) departure times for a fixed set of bus/train lines and stops, and displays them on an [AWTRIX NG](https://blueforcer.github.io/awtrix-ng/)/Ulanzi TC001 pixel display over MQTT.
 
-It runs continuously: every `poll_interval_seconds`, it queries PRIM for each configured stop and publishes a custom AWTRIX app showing the line, destination, and minutes until the next departure (e.g. `25 > Bibliotheque F.mitterrand: 4min`), colored per line. A stop with no upcoming departure clears its app instead of showing a stale time. If the add-on stops publishing for more than 90 seconds (crash, network outage), AWTRIX removes the app on its own rather than leaving stale data on screen.
+It only polls during a Mon-Fri 07:00-08:30 commute window (see [Active hours](#active-hours)); every `poll_interval_seconds` inside that window, it queries PRIM for each configured stop and publishes a custom AWTRIX app showing the next two departures (e.g. `25: Biblio: 3 > 12`) — the line name in the line's own color, the destination in white, each wait time in green (≥ 5 min) or red (< 5 min), and the `>` separator in violet (see [Display colors](#display-colors)). A stop with no upcoming departure shows an orange notice instead of a stale time. If the add-on stops publishing for more than 90 seconds (crash, network outage), AWTRIX removes the app on its own rather than leaving stale data on screen.
 
 The monitored lines and stops are configured via the add-on's `lines` option (see below); if left empty, it falls back to the bundled [lines.yaml](lines.yaml).
 
@@ -16,7 +16,7 @@ The monitored lines and stops are configured via the add-on's `lines` option (se
 - An MQTT broker Home Assistant can reach — the [Mosquitto broker add-on](https://github.com/home-assistant/addons/tree/master/mosquitto) (Supervised) or the [eclipse-mosquitto](https://hub.docker.com/_/eclipse-mosquitto) image (Container) are the simplest options and are assumed by the defaults below
 - An AWTRIX/Ulanzi TC001 device flashed with [AWTRIX NG](https://blueforcer.github.io/awtrix-ng/), connected to the same MQTT broker — **not AWTRIX 3**, see [AWTRIX firmware compatibility](#awtrix-firmware-compatibility) below
 - A PRIM API token: register for free at the [PRIM developer portal](https://prim.iledefrance-mobilites.fr/) and create a token
-- The `MonitoringRef` (stop) and `LineRef` (line) identifiers for the stops you want to track — look these up via the PRIM `stop-monitoring` API or IDFM's [open data](https://prim.iledefrance-mobilites.fr/) stop reference
+- The `MonitoringRef` (stop) and `LineRef` (line) identifiers for the stops you want to track — see [Finding line and stop identifiers](../README.md#finding-line-and-stop-identifiers) in the root README
 
 ### Installation
 
@@ -57,12 +57,12 @@ docker run -d \
 | `mqtt_port` | no | `1883` | MQTT broker port |
 | `mqtt_user` | no | *(none)* | MQTT username, if your broker requires auth |
 | `mqtt_password` | no | *(none)* | MQTT password, if your broker requires auth |
-| `poll_interval_seconds` | no | `30` | How often to query PRIM and refresh the display, in seconds |
+| `poll_interval_seconds` | no | `30` | How often to query PRIM and refresh the display, in seconds, while inside the active window (see below) |
 | `lines` | no | *(empty — uses [lines.yaml](lines.yaml))* | The bus/train lines and stops to monitor (see below) |
 
 ### Changing the tracked lines/stops
 
-Set the `lines` option from the add-on's Configuration tab — no rebuild or file editing needed. Each entry needs a `line_name` (display label), a `line_ref`, an optional `color` (hex, used for the AWTRIX app's text color), and a `stops` list, where each stop needs a `stop_ref`, `stop_name`, and `destination_name`:
+Set the `lines` option from the add-on's Configuration tab — no rebuild or file editing needed. Each entry needs a `line_name` (display label), a `line_ref`, an optional `color` (hex, colors the line-name portion of the display text), and a `stops` list, where each stop needs a `stop_ref`, `stop_name`, and `destination_name`, plus an optional `destination_name_short` (shown on the display instead of the full name when set, since the pixel display is narrow):
 
 ```yaml
 lines:
@@ -73,9 +73,26 @@ lines:
       - stop_ref: "STIF:StopPoint:Q:25376:"
         stop_name: "Jules Vanzuppe"
         destination_name: "Bibliotheque F.mitterrand"
+        destination_name_short: "Biblio"
 ```
 
-Leave `lines` empty to use the bundled [lines.yaml](lines.yaml) instead — that's also what `scripts/check_departures.py` always uses, since it has no add-on options of its own. If a configured line or stop is missing a required field, the add-on raises a clear error at startup naming the exact line/stop and field, rather than failing silently or with a raw `KeyError`.
+Leave `lines` empty to use the bundled [lines.yaml](lines.yaml) instead — that's also what `scripts/check_departures.py` always uses, since it has no add-on options of its own. If a configured line or stop is missing a required field, the add-on raises a clear error at startup naming the exact line/stop and field, rather than failing silently or with a raw `KeyError`. For how to find the actual `line_ref`/`stop_ref` values for a line/stop, see [Finding line and stop identifiers](../README.md#finding-line-and-stop-identifiers) in the root README.
+
+### Active hours
+
+This add-on only polls PRIM and refreshes the display Monday-Friday, 07:00-08:30; outside that window it sleeps until the window's next occurrence (skipping weekends entirely) instead of running continuously. This is currently hardcoded as `ACTIVE_WINDOW_START_MINUTES`/`ACTIVE_WINDOW_END_MINUTES` in [nxt_dep_awtrix.py](nxt_dep_awtrix.py) rather than an add-on option — edit those constants (and rebuild the image) for a different window.
+
+### Display colors
+
+| Element | Color |
+|---|---|
+| Line name | the line's own `color` option |
+| Destination | white |
+| Each wait time | green `#2ecc71` if ≥ 5 min, red `#e74c3c` if < 5 min |
+| `>` separator | violet `#9b59b6` |
+| No-departure notice | orange `#e67e22` |
+
+These are hardcoded (`WHITE`, `SOFT_GREEN`, `SOFT_RED`, `SEPARATOR_COLOR`, `NOTICE_ORANGE`) in [nxt_dep_awtrix.py](nxt_dep_awtrix.py), not configurable via add-on options. They're sent as an AWTRIX NG [text fragment array](https://blueforcer.github.io/awtrix-ng/guides/text/) rather than a single colored string, which is what lets different parts of the same line have different colors.
 
 ### AWTRIX firmware compatibility
 
@@ -105,3 +122,4 @@ Log level and format are controlled by [logging.conf](logging.conf) (INFO by def
 - **Log shows "get departure request returned 401"**: the PRIM API token is invalid or expired.
 - **Nothing shows up on the display but no errors in the log**: double-check `awtrix_prefix` matches the MQTT prefix configured on the AWTRIX device itself, and that the device is subscribed to that broker.
 - **Nothing shows up and the device is on AWTRIX 3, not AWTRIX NG**: see [AWTRIX firmware compatibility](#awtrix-firmware-compatibility) — the two firmwares use different MQTT topics and payload fields.
+- **Nothing shows up outside weekday mornings**: expected — the add-on is only active Mon-Fri 07:00-08:30, see [Active hours](#active-hours).
