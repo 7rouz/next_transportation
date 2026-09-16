@@ -86,7 +86,6 @@ def make_awtrix_appname(line_name, stop_index):
 WHITE = "#ffffff"
 SOFT_GREEN = "#2ecc71"
 SOFT_RED = "#e74c3c"
-SEPARATOR_COLOR = "#9b59b6"
 NOTICE_ORANGE = "#e67e22"
 
 
@@ -151,8 +150,8 @@ def run_once(mqtt_client):
             if departure_json["Notice"] != "":
                 logger.info(f"No departures for line {line_name} in stop {stop_name} in direction of {destination_name}: {departure_json['Notice']}")
                 text = [
-                    {"text": f"{line_name}: ", "color": color},
-                    {"text": f"{destination_name_short}: {departure_json['Notice']}", "color": NOTICE_ORANGE},
+                    {"text": f"{line_name}", "color": color},
+                    {"text": f": {destination_name_short}: {departure_json['Notice']}", "color": NOTICE_ORANGE},
                 ]
                 # clear_app(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname)
                 publish_departure(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname, text)
@@ -170,10 +169,10 @@ def run_once(mqtt_client):
                 wait_time_2 = "-"
             logger.info(f"{line_name} to {destination_name} from {stop_name}: {wait_time} min")
             text = [
-                {"text": f"{line_name}: ", "color": color},
-                {"text": f"{destination_name_short}: ", "color": WHITE},
+                {"text": f"{line_name}", "color": color},
+                {"text": f": {destination_name_short}: ", "color": WHITE},
                 {"text": str(wait_time), "color": wait_time_color(wait_time)},
-                {"text": " > ", "color": SEPARATOR_COLOR},
+                {"text": " , ", "color": WHITE},
                 {"text": str(wait_time_2), "color": wait_time_color(wait_time_2)},
             ]
             publish_departure(mqtt_client, CONFIG["AWTRIX_PREFIX"], appname, text)
